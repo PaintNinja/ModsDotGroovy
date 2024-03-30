@@ -36,11 +36,11 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
     @PathSensitive(PathSensitivity.NONE)
     abstract RegularFileProperty getInput()
 
-    @Optional
     @OutputFile
     abstract RegularFileProperty getOutput()
 
-    @Input
+    // included in the output file name
+    @Internal
     abstract Property<String> getOutputName()
 
     @CompileClasspath
@@ -55,7 +55,6 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
     abstract Property<Platform> getPlatform()
 
     @Input
-    @Optional
     abstract Property<Boolean> getIsMultiplatform()
 
     @Input
@@ -82,6 +81,7 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
     AbstractMDGConvertTask() {
         // default to e.g. build/modsDotGroovyToToml/mods.toml
         output.convention(projectLayout.buildDirectory.dir('generated/modsDotGroovy/' + name.replaceFirst('ConvertTo', 'modsDotGroovyTo')).map((Directory dir) -> dir.file(outputName.get())))
+        output.finalizeValueOnRead()
 
         projectVersion.convention(project.provider(() -> project.version.toString()))
         projectGroup.convention(project.provider(() -> project.group.toString()))

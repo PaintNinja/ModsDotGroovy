@@ -456,7 +456,7 @@ abstract class MDGExtension {
         if (convertTask != null) {
             processResourcesTask.configure { task ->
                 task.dependsOn convertTask
-                task.from(convertTask.get().output.get().asFile) { CopySpec spec ->
+                task.from(convertTask.get().output) { CopySpec spec ->
                     spec.into processResourcesDestPath
                 }
             }
