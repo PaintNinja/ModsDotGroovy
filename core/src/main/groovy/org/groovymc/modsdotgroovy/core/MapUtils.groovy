@@ -32,6 +32,22 @@ class MapUtils {
         }
     }
 
+    static Map recursivelyMergeOnlyMaps(final Map left, final Map right) {
+        if (left === null && right === null) return [:]
+        if (left === null) return right
+        if (right === null) return left
+        Map out = new LinkedHashMap(left)
+        right.each { key, value ->
+            var existing = out[key]
+            if (existing instanceof Map && value instanceof Map) {
+                out[key] = recursivelyMergeOnlyMaps(existing, value)
+            } else {
+                out[key] = value
+            }
+        }
+        return out
+    }
+
     /**
      * Recursively merges the contents of two Maps, including nested Maps and Lists.<br>
      * The left map has any null or missing values filled in by the right map if available.<br>

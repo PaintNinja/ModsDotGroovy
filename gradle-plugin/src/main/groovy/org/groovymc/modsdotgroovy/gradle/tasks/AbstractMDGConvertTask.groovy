@@ -136,7 +136,7 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
 
         compilerConfig.addCompilationCustomizers(bindingAdderTransform)
 
-        final Map bindingValues = [
+        Map bindingValues = [
                 buildProperties: buildProperties.get(),
                 platform: platform,
                 version: projectVersion.get(),
@@ -144,14 +144,7 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
         ]
 
         final json = new JsonSlurper()
-        (json.parse(platformDetailsFile.get().asFile) as Map<String, String>).each { key, value ->
-            final original = value
-            if (original instanceof Map && value instanceof Map) {
-                bindingValues[key] = original + value
-            } else {
-                bindingValues[key] = value
-            }
-        }
+        bindingValues = MapUtils.recursivelyMergeOnlyMaps(bindingValues, json.parse(platformDetailsFile.get().asFile) as Map)
 
         final bindings = new Binding(bindingValues)
         final shell = new GroovyShell(mdgClassLoader, bindings, compilerConfig)

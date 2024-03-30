@@ -3,3 +3,7 @@ plugins {
 }
 
 modsDotGroovy.multiplatform.expose()
+
+modsDotGroovy.gather {
+    projectProperty 'credits'
+}
