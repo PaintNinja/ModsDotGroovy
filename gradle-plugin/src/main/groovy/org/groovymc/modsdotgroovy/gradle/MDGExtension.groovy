@@ -55,6 +55,7 @@ abstract class MDGExtension {
     final Multiplatform multiplatform
     final ListProperty<String> catalogs
     final ListProperty<Action<AbstractGatherPlatformDetailsTask>> gatherActions
+    final ListProperty<Action<AbstractMDGConvertTask>> convertActions
 
     private final Property<Boolean> multiplatformFlag
     private final SourceSet sourceSet
@@ -77,6 +78,7 @@ abstract class MDGExtension {
         this.modsDotGroovyFile = project.objects.property(FileCollection)
         this.catalogs = project.objects.listProperty(String)
         this.gatherActions = project.objects.listProperty(Action.class as Class<Action<AbstractGatherPlatformDetailsTask>>)
+        this.convertActions = project.objects.listProperty(Action.class as Class<Action<AbstractMDGConvertTask>>)
 
         this.platforms.convention(inferPlatforms(project))
 
@@ -104,6 +106,7 @@ abstract class MDGExtension {
         this.multiplatformFlag.finalizeValueOnRead()
         this.catalogs.finalizeValueOnRead()
         this.gatherActions.finalizeValueOnRead()
+        this.convertActions.finalizeValueOnRead()
     }
 
     void conversionOptions(Action<MDGConversionOptions> action) {
@@ -144,6 +147,10 @@ abstract class MDGExtension {
 
     void gather(Action<AbstractGatherPlatformDetailsTask> action) {
         gatherActions.add(action)
+    }
+
+    void convert(Action<AbstractMDGConvertTask> action) {
+        convertActions.add(action)
     }
 
     void apply() {
@@ -474,6 +481,9 @@ abstract class MDGExtension {
                 task.conversionOptions.set(conversionOptions)
 
                 task.group = MDGExtension.TASK_GROUP
+                this.convertActions.get().each { action ->
+                    action.execute(task)
+                }
             }
         }
     }
