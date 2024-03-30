@@ -54,7 +54,6 @@ abstract class MDGExtension {
     final Property<Boolean> setupGatherTask
     final Property<Boolean> inferGather
     final ListProperty<Platform> platforms
-    final MDGConversionOptions conversionOptions
     final Property<FileCollection> modsDotGroovyFile
     final Multiplatform multiplatform
     final ListProperty<String> catalogs
@@ -79,7 +78,6 @@ abstract class MDGExtension {
         this.setupGatherTask = project.objects.property(Boolean)
         this.inferGather = project.objects.property(Boolean)
         this.platforms = project.objects.listProperty(Platform)
-        this.conversionOptions = project.objects.newInstance(MDGConversionOptions)
         this.modsDotGroovyFile = project.objects.property(FileCollection)
         this.catalogs = project.objects.listProperty(String)
         this.gatherActions = project.objects.listProperty(Action.class as Class<Action<AbstractGatherPlatformDetailsTask>>)
@@ -114,10 +112,6 @@ abstract class MDGExtension {
         this.catalogs.finalizeValueOnRead()
         this.gatherActions.finalizeValueOnRead()
         this.convertActions.finalizeValueOnRead()
-    }
-
-    void conversionOptions(Action<MDGConversionOptions> action) {
-        action.execute(conversionOptions)
     }
 
     private static List<Platform> inferPlatforms(Project project) {
@@ -468,7 +462,6 @@ abstract class MDGExtension {
                         plugin,
                         frontend
                 )
-                task.conversionOptions.set(conversionOptions)
 
                 task.group = MDGExtension.TASK_GROUP
                 this.convertActions.get().each { action ->

@@ -12,12 +12,10 @@ import org.gradle.api.file.ProjectLayout
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
-import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.*
 import org.gradle.work.NormalizeLineEndings
 import org.groovymc.modsdotgroovy.core.MapUtils
 import org.groovymc.modsdotgroovy.core.Platform
-import org.groovymc.modsdotgroovy.gradle.MDGConversionOptions
 import org.groovymc.modsdotgroovy.transform.MDGBindingVarsAdder
 
 import javax.inject.Inject
@@ -62,9 +60,6 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
 
     @Input
     abstract Property<String> getProjectGroup()
-
-    @Input
-    abstract Property<MDGConversionOptions> getConversionOptions()
 
     /**
      * A file containing platform-specific details, such as the Minecraft version and loader version.
