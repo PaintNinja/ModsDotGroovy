@@ -203,9 +203,9 @@ final class QuiltPlugin extends ModsDotGroovyPlugin {
             }
         }
 
-        PluginResult setLoadType(final String loadType) {
+        PluginResult setLoadType(final loadType) {
             log.debug "loadType: ${loadType}"
-            return PluginResult.rename('load_type', loadType.toLowerCase(Locale.ROOT))
+            return PluginResult.rename('load_type', loadType.toString().toLowerCase(Locale.ROOT))
         }
 
         PluginResult setIntermediateMappings(final String intermediateMappings) {
