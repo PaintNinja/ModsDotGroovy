@@ -1,6 +1,7 @@
 package org.groovymc.modsdotgroovy.gradle.tasks
 
 import groovy.json.JsonBuilder
+import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import org.gradle.api.DefaultTask
 import org.gradle.api.artifacts.Configuration
@@ -18,12 +19,16 @@ import org.gradle.api.provider.ProviderFactory
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.groovymc.modsdotgroovy.core.MapUtils
 import org.jetbrains.annotations.Nullable
 
 import javax.inject.Inject
@@ -44,6 +49,11 @@ abstract class AbstractGatherPlatformDetailsTask extends DefaultTask {
     @Input
     abstract MapProperty<String, Object> getBuildProperties()
 
+    @Optional
+    @InputFiles
+    @PathSensitive(PathSensitivity.NONE)
+    abstract ConfigurableFileCollection getParents()
+
     @Optional @Input
     Property<@Nullable String> getMinecraftVersion() {
         return minecraftVersion
@@ -60,14 +70,10 @@ abstract class AbstractGatherPlatformDetailsTask extends DefaultTask {
     }
 
     @Inject
-    protected ProjectLayout getProjectLayout() {
-        throw new IllegalStateException('ProjectLayout not injected')
-    }
+    protected abstract ProjectLayout getProjectLayout()
 
     @Inject
-    protected ObjectFactory getObjectFactory() {
-        throw new IllegalStateException('ObjectFactory not injected')
-    }
+    protected abstract ObjectFactory getObjectFactory()
 
     void projectProperty(String name) {
         buildProperties.put(name, project.providers.gradleProperty(name))
@@ -80,6 +86,7 @@ abstract class AbstractGatherPlatformDetailsTask extends DefaultTask {
     AbstractGatherPlatformDetailsTask() {
         outputFile.convention(projectLayout.buildDirectory.dir("generated/modsDotGroovy/${name.uncapitalize()}").map((Directory dir) -> dir.file('mdgPlatform.json')))
         extraProperties.convention([:])
+        parents.finalizeValueOnRead()
     }
 
     void setMinecraftVersion(String version) {
@@ -94,22 +101,28 @@ abstract class AbstractGatherPlatformDetailsTask extends DefaultTask {
         outputFile.set(file)
     }
 
-    protected void writePlatformDetails(String minecraftVersion, @Nullable String platformVersion) {
+    protected void writePlatformDetails(@Nullable String minecraftVersion, @Nullable String platformVersion) {
+        Map map = [:]
+        if (minecraftVersion !== null) {
+            map['minecraftVersion'] = minecraftVersion
+            try {
+                map['minecraftVersionRange'] = "[${minecraftVersion},1.${(DOT_PATTERN.split(minecraftVersion, 3)[1] as int) + 1})".toString()
+            } catch (RuntimeException ignored) {
+                // It wasn't the sort of version we were expecting, so we can't do any sort of range stuff to it
+            }
+        }
+        if (platformVersion !== null) {
+            map['platformVersion'] = platformVersion
+        }
+        map['buildProperties'] = getBuildProperties().get()
+        map.putAll(getExtraProperties().get())
+
+        for (File parent : parents.files) {
+            Map parentMap = new JsonSlurper().parse(parent) as Map
+            map = MapUtils.recursivelyMergeOnlyMaps(parentMap, map)
+        }
+
         outputFile.get().asFile.withWriter { writer ->
-            Map map = [:]
-            if (minecraftVersion !== null) {
-                map['minecraftVersion'] = minecraftVersion
-                try {
-                    map['minecraftVersionRange'] = "[${minecraftVersion},1.${(DOT_PATTERN.split(minecraftVersion, 3)[1] as int) + 1})".toString()
-                } catch (RuntimeException ignored) {
-                    // It wasn't the sort of version we were expecting, so we can't do any sort of range stuff to it
-                }
-            }
-            if (platformVersion !== null) {
-                map['platformVersion'] = platformVersion
-            }
-            map['buildProperties'] = getBuildProperties().get()
-            map.putAll(getExtraProperties().get())
             writer.write(new JsonBuilder(map).toPrettyString())
         }
     }

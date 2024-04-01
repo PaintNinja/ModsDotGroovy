@@ -11,7 +11,4 @@ dependencies {
 
 modsDotGroovy {
     multiplatform.from ':multiplatform:common'
-    gather {
-        projectProperty 'credits'
-    }
 }

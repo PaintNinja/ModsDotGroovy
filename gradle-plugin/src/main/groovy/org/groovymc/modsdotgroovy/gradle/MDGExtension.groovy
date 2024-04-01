@@ -32,6 +32,9 @@ import javax.inject.Inject
 @CompileStatic
 abstract class MDGExtension {
     private static final String EXPOSE_SOURCE_SET = 'shareModsDotGroovy'
+    private static final String EXPOSE_GATHERED = 'shareModsDotGroovyGather'
+    private static final String CONSUME_SOURCE_SET = 'consumeModsDotGroovy'
+    private static final String CONSUME_GATHERED = 'consumeModsDotGroovyGather'
     private static final String DEFAULT_MDG = 'mods.groovy'
     private static final String TASK_GROUP = 'modsdotgroovy'
 
@@ -48,13 +51,14 @@ abstract class MDGExtension {
     final Property<Boolean> setupDsl
     final Property<Boolean> setupPlugins
     final Property<Boolean> setupTasks
+    final Property<Boolean> setupGatherTask
     final Property<Boolean> inferGather
     final ListProperty<Platform> platforms
-    final MDGConversionOptions conversionOptions
     final Property<FileCollection> modsDotGroovyFile
     final Multiplatform multiplatform
     final ListProperty<String> catalogs
     final ListProperty<Action<AbstractGatherPlatformDetailsTask>> gatherActions
+    final ListProperty<Action<AbstractMDGConvertTask>> convertActions
 
     private final Property<Boolean> multiplatformFlag
     private final SourceSet sourceSet
@@ -71,12 +75,13 @@ abstract class MDGExtension {
         this.setupDsl = project.objects.property(Boolean)
         this.setupPlugins = project.objects.property(Boolean)
         this.setupTasks = project.objects.property(Boolean)
+        this.setupGatherTask = project.objects.property(Boolean)
         this.inferGather = project.objects.property(Boolean)
         this.platforms = project.objects.listProperty(Platform)
-        this.conversionOptions = project.objects.newInstance(MDGConversionOptions)
         this.modsDotGroovyFile = project.objects.property(FileCollection)
         this.catalogs = project.objects.listProperty(String)
         this.gatherActions = project.objects.listProperty(Action.class as Class<Action<AbstractGatherPlatformDetailsTask>>)
+        this.convertActions = project.objects.listProperty(Action.class as Class<Action<AbstractMDGConvertTask>>)
 
         this.platforms.convention(inferPlatforms(project))
 
@@ -91,6 +96,7 @@ abstract class MDGExtension {
 
         this.setupPlugins.convention(false)
         this.setupTasks.convention(false)
+        this.setupGatherTask.convention(false)
         this.setupDsl.convention(false)
         this.inferGather.convention(true)
         this.catalogs.convention(['libs'])
@@ -98,16 +104,14 @@ abstract class MDGExtension {
         this.setupDsl.finalizeValueOnRead()
         this.setupPlugins.finalizeValueOnRead()
         this.setupTasks.finalizeValueOnRead()
+        this.setupGatherTask.finalizeValueOnRead()
         this.inferGather.finalizeValueOnRead()
         this.platforms.finalizeValueOnRead()
         this.modsDotGroovyFile.finalizeValueOnRead()
         this.multiplatformFlag.finalizeValueOnRead()
         this.catalogs.finalizeValueOnRead()
         this.gatherActions.finalizeValueOnRead()
-    }
-
-    void conversionOptions(Action<MDGConversionOptions> action) {
-        action.execute(conversionOptions)
+        this.convertActions.finalizeValueOnRead()
     }
 
     private static List<Platform> inferPlatforms(Project project) {
@@ -126,12 +130,14 @@ abstract class MDGExtension {
         setupDsl.set(true)
         setupPlugins.set(true)
         setupTasks.set(true)
+        setupGatherTask.set(true)
     }
 
     void disable() {
         setupDsl.set(false)
         setupPlugins.set(false)
         setupTasks.set(false)
+        setupGatherTask.set(false)
     }
 
     void platform(Platform platform) {
@@ -144,6 +150,10 @@ abstract class MDGExtension {
 
     void gather(Action<AbstractGatherPlatformDetailsTask> action) {
         gatherActions.add(action)
+    }
+
+    void convert(Action<AbstractMDGConvertTask> action) {
+        convertActions.add(action)
     }
 
     void apply() {
@@ -193,6 +203,8 @@ abstract class MDGExtension {
             // if asked, setup the mods.groovy Gradle tasks
             if (this.setupTasks.get())
                 setupTasks(sourceSet, platform, rootConfiguration, pluginConfiguration, frontendConfiguration)
+            else if (this.setupGatherTask.get())
+                setupGatherTask(platform, sourceSet)
 
 
             // setup IDE support by adding the mdgFrontend configuration to the compileOnly configuration
@@ -202,18 +214,36 @@ abstract class MDGExtension {
 
     @CompileStatic
     class Multiplatform {
+        private boolean exposed = false
+
         void from(String projectPath) {
             from(projectPath, sourceSet.name)
         }
 
         void from(String projectPath, String sourceSetName) {
             var configurationName = forSourceSetName(sourceSetName, EXPOSE_SOURCE_SET)
-            var consumingConfiguration = project.configurations.detachedConfiguration(
-                    project.dependencies.project(path: projectPath, configuration: configurationName)
+            var consumingConfiguration = project.configurations.create(
+                    forSourceSetName(sourceSet.name, CONSUME_SOURCE_SET)
             )
+            consumingConfiguration.dependencies.add project.dependencies.project(path: projectPath, configuration: configurationName)
             consumingConfiguration.canBeResolved = true
             consumingConfiguration.canBeConsumed = false
+            consumingConfiguration.visible = false
             modsDotGroovyFile.set(consumingConfiguration)
+
+            var gatherConfigurationName = forSourceSetName(sourceSetName, EXPOSE_GATHERED)
+            var gatherConsumingConfiguration = project.configurations.create(
+                    forSourceSetName(sourceSet.name, CONSUME_GATHERED)
+            )
+            gatherConsumingConfiguration.dependencies.add project.dependencies.project(path: projectPath, configuration: gatherConfigurationName)
+            gatherConsumingConfiguration.canBeResolved = true
+            gatherConsumingConfiguration.canBeConsumed = false
+            gatherConsumingConfiguration.visible = false
+            gather {
+                it.parents.from(gatherConsumingConfiguration)
+                it.dependsOn(gatherConsumingConfiguration)
+            }
+
             multiplatformFlag.set(true)
         }
 
@@ -222,14 +252,21 @@ abstract class MDGExtension {
         }
 
         void expose(Object file, Action<? super ConfigurablePublishArtifact> configureAction) {
+            exposed = true
             setupPlugins.set(false)
             setupTasks.set(false)
+            setupGatherTask.set(true)
             multiplatformFlag.set(true)
             platforms.set([Platform.UNKNOWN])
             var configurationName = forSourceSetName(sourceSet.name, EXPOSE_SOURCE_SET)
             var exposingConfiguration = project.configurations.maybeCreate(configurationName)
             exposingConfiguration.canBeResolved = false
             exposingConfiguration.canBeConsumed = true
+
+            var gatherConfigurationName = forSourceSetName(sourceSet.name, EXPOSE_GATHERED)
+            var gatherExposingConfiguration = project.configurations.maybeCreate(gatherConfigurationName)
+            gatherExposingConfiguration.canBeResolved = false
+            gatherExposingConfiguration.canBeConsumed = true
 
             project.artifacts {
                 add(configurationName, file, configureAction)
@@ -365,53 +402,7 @@ abstract class MDGExtension {
 
         final TaskProvider<ProcessResources> processResourcesTask = project.tasks.named(sourceSet.processResourcesTaskName, ProcessResources)
 
-        TaskProvider<? extends AbstractGatherPlatformDetailsTask> gatherTask
-        if (inferGather.get()) {
-            switch (platform) {
-                case Platform.FORGE:
-                    gatherTask = makeGatherTask(platform, GatherForgePlatformDetails)
-                    gatherTask.configure { task ->
-                        Configuration modImplementation = project.configurations.getByName('minecraft')
-                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
-                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
-                    }
-                    break
-                case Platform.NEOFORGE:
-                    gatherTask = makeGatherTask(platform, GatherNeoForgePlatformDetails, sourceSet.compileClasspathConfigurationName)
-                    break
-                case Platform.FABRIC:
-                    gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
-                    gatherTask.configure { task ->
-                        Configuration modImplementation = project.configurations.getByName('modCompileClasspath')
-                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
-                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
-                        task.targetModule.set('fabric-loader')
-                        task.targetGroup.set('net.fabricmc')
-                    }
-                    break
-                case Platform.QUILT:
-                    gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
-                    gatherTask.configure { task ->
-                        Configuration modImplementation = project.configurations.getByName('modCompileClasspath')
-                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
-                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
-                        task.targetModule.set('quilt-loader')
-                        task.targetGroup.set('org.quiltmc')
-                    }
-                    break
-                default:
-                    gatherTask = makeGatherTask(platform, AbstractGatherPlatformDetailsTask)
-            }
-        } else {
-            gatherTask = makeGatherTask(platform, AbstractGatherPlatformDetailsTask)
-        }
-
-        // If we have any version catalogs specified, we should set them up
-        setupCatalogs(gatherTask, getCatalogs().get())
-
-        gatherActions.get().each { action ->
-            gatherTask.configure(action)
-        }
+        TaskProvider<? extends AbstractGatherPlatformDetailsTask> gatherTask = setupGatherTask(platform, sourceSet)
 
         TaskProvider<? extends AbstractMDGConvertTask> convertTask
         String processResourcesDestPath
@@ -471,10 +462,72 @@ abstract class MDGExtension {
                         plugin,
                         frontend
                 )
-                task.conversionOptions.set(conversionOptions)
 
                 task.group = MDGExtension.TASK_GROUP
+                this.convertActions.get().each { action ->
+                    action.execute(task)
+                }
             }
         }
+    }
+
+    private TaskProvider<? extends AbstractGatherPlatformDetailsTask> setupGatherTask(Platform platform, SourceSet sourceSet) {
+        TaskProvider<? extends AbstractGatherPlatformDetailsTask> gatherTask
+        if (inferGather.get()) {
+            switch (platform) {
+                case Platform.FORGE:
+                    gatherTask = makeGatherTask(platform, GatherForgePlatformDetails)
+                    gatherTask.configure { task ->
+                        Configuration modImplementation = project.configurations.getByName('minecraft')
+                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
+                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                    }
+                    break
+                case Platform.NEOFORGE:
+                    gatherTask = makeGatherTask(platform, GatherNeoForgePlatformDetails, sourceSet.compileClasspathConfigurationName)
+                    break
+                case Platform.FABRIC:
+                    gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
+                    gatherTask.configure { task ->
+                        Configuration modImplementation = project.configurations.getByName('modCompileClasspath')
+                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
+                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                        task.targetModule.set('fabric-loader')
+                        task.targetGroup.set('net.fabricmc')
+                    }
+                    break
+                case Platform.QUILT:
+                    gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
+                    gatherTask.configure { task ->
+                        Configuration modImplementation = project.configurations.getByName('modCompileClasspath')
+                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
+                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                        task.targetModule.set('quilt-loader')
+                        task.targetGroup.set('org.quiltmc')
+                    }
+                    break
+                default:
+                    gatherTask = makeGatherTask(platform, AbstractGatherPlatformDetailsTask)
+            }
+        } else {
+            gatherTask = makeGatherTask(platform, AbstractGatherPlatformDetailsTask)
+        }
+
+        // If we have any version catalogs specified, we should set them up
+        setupCatalogs(gatherTask, getCatalogs().get())
+
+        gatherActions.get().each { action ->
+            gatherTask.configure(action)
+        }
+
+        if (multiplatform.exposed) {
+            project.artifacts {
+                add(forSourceSetName(sourceSet.name, EXPOSE_GATHERED), gatherTask.flatMap { it.outputFile }) {
+                    builtBy(gatherTask)
+                }
+            }
+        }
+
+        return gatherTask
     }
 }
