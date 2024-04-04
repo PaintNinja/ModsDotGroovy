@@ -158,7 +158,14 @@ final class FabricPlugin extends ModsDotGroovyPlugin {
         PluginResult onNestLeave(final Map value) {
             log.info "mod.onNestLeave: ${value}"
 
-            return PluginResult.rename(modId, value.versionRange)
+            if (modId == null) {
+                throw new PluginResult.MDGPluginException("modId is required in a mod block")
+            }
+
+            String oldModId = modId
+            this.modId = null
+
+            return PluginResult.rename(oldModId, value.versionRange)
         }
     }
 

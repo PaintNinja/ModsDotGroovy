@@ -60,6 +60,10 @@ final mdg = FabricModsDotGroovy.make {
             modId = "rats"
             versionRange = "*"
         }
+        mod {
+            modId = "yet-another-mod"
+            versionRange = ">=17"
+        }
     }
 
     recommends {

@@ -86,6 +86,7 @@ abstract class AbstractGatherPlatformDetailsTask extends DefaultTask {
     AbstractGatherPlatformDetailsTask() {
         outputFile.convention(projectLayout.buildDirectory.dir("generated/modsDotGroovy/${name.uncapitalize()}").map((Directory dir) -> dir.file('mdgPlatform.json')))
         extraProperties.convention([:])
+        buildProperties.convention([:])
         parents.finalizeValueOnRead()
     }
 

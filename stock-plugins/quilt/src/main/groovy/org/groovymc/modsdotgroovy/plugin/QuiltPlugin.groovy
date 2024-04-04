@@ -142,15 +142,8 @@ final class QuiltPlugin extends ModsDotGroovyPlugin {
             def set(final String property, final value) {
                 Map map = [:]
                 map.put("id", property)
-                if (value instanceof Map) {
-                    map.putAll(value)
-                } else {
-                    def versions = handleVersionRange(value)
-                    if (versions instanceof VersionRange) {
-                        versions = makeVersionMap(versions)
-                    }
-                    map.put("versions", versions)
-                }
+                def versions = handleVersionRange(value)
+                map.put("versions", versions)
                 mod.mods.add(map)
                 return PluginResult.remove()
             }
@@ -167,15 +160,8 @@ final class QuiltPlugin extends ModsDotGroovyPlugin {
             def set(final String property, final value) {
                 Map map = [:]
                 map.put("id", property)
-                if (value instanceof Map) {
-                    map.putAll(value)
-                } else {
-                    def versions = handleVersionRange(value)
-                    if (versions instanceof VersionRange) {
-                        versions = makeVersionMap(versions)
-                    }
-                    map.put("versions", versions)
-                }
+                def versions = handleVersionRange(value)
+                map.put("versions", versions)
                 mod.mods.add(map)
                 return PluginResult.remove()
             }
@@ -340,7 +326,14 @@ final class QuiltPlugin extends ModsDotGroovyPlugin {
         def onNestLeave(final Map value) {
             log.info "mod.onNestLeave: ${value}"
 
-            Map map = [id:id]
+            if (id == null) {
+                throw new PluginResult.MDGPluginException("id is required in a mod block")
+            }
+
+            String oldId = id
+            this.id = null
+
+            Map map = [id:oldId]
             map.putAll(value)
             mods.add(map)
             return PluginResult.remove()
