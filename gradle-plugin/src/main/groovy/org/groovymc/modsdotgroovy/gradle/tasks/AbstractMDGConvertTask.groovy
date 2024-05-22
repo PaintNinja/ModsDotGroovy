@@ -1,10 +1,7 @@
 package org.groovymc.modsdotgroovy.gradle.tasks
 
 import groovy.json.JsonSlurper
-import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.customizers.ASTTransformationCustomizer
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.Directory
@@ -12,11 +9,14 @@ import org.gradle.api.file.ProjectLayout
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.services.ServiceReference
 import org.gradle.api.tasks.*
 import org.gradle.work.NormalizeLineEndings
-import org.groovymc.modsdotgroovy.core.MapUtils
-import org.groovymc.modsdotgroovy.core.Platform
-import org.groovymc.modsdotgroovy.transform.MDGBindingVarsAdder
+import org.groovymc.modsdotgroovy.types.core.Platform
+import org.groovymc.modsdotgroovy.gradle.internal.MapUtils
+import org.groovymc.modsdotgroovy.gradle.internal.ConvertService
+import org.groovymc.modsdotgroovy.types.runner.FilteredStream
+import org.jetbrains.annotations.ApiStatus
 
 import javax.inject.Inject
 import java.nio.file.Files
@@ -24,10 +24,6 @@ import java.nio.file.Files
 @CacheableTask
 @CompileStatic
 abstract class AbstractMDGConvertTask extends DefaultTask {
-    private static final CompilerConfiguration MDG_COMPILER_CONFIG = new CompilerConfiguration().tap {
-        targetBytecode = JDK17
-        optimizationOptions['indy'] = true
-    }
 
     @InputFile
     @NormalizeLineEndings
@@ -73,6 +69,15 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
     @Inject
     protected abstract ProjectLayout getProjectLayout()
 
+    @ServiceReference('org.groovymc.modsdotgroovy.gradle.internal.ConvertService')
+    @ApiStatus.Internal
+    protected abstract Property<ConvertService> getConvertService()
+
+    @InputFiles
+    @Classpath
+    @ApiStatus.Internal
+    protected abstract ConfigurableFileCollection getRunnerClasspath()
+
     AbstractMDGConvertTask() {
         // default to e.g. build/modsDotGroovyToToml/mods.toml
         output.convention(projectLayout.buildDirectory.dir('generated/modsDotGroovy/' + name.replaceFirst('ConvertTo', 'modsDotGroovyTo')).map((Directory dir) -> dir.file(outputName.get())))
@@ -81,19 +86,11 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
         projectVersion.convention(project.provider(() -> project.version.toString()))
         projectGroup.convention(project.provider(() -> project.group.toString()))
         isMultiplatform.convention(project.provider(() -> false))
+
+        runnerClasspath.from(project.configurations.maybeCreate('modsDotGroovyRunnerClasspath'))
     }
 
     protected abstract String writeData(Map data)
-
-    protected static Map<String, Object> filterBuildProperties(final Map<String, Object> buildProperties, final Set<String> blacklist) {
-        return buildProperties.findAll { entry ->
-            for (String blacklistEntry in blacklist) {
-                if (entry.key.containsIgnoreCase(blacklistEntry))
-                    return false
-            }
-            return true
-        }
-    }
 
     @TaskAction
     void run() {
@@ -103,7 +100,7 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
             return
         }
 
-        final Map data = MapUtils.recursivelyConvertToPrimitives(from(input))
+        final Map data = FilteredStream.convertToSerializable(from(input))
 
         final outPath = output.get().asFile.toPath()
         if (outPath.parent !== null && !Files.exists(outPath.parent))
@@ -114,26 +111,8 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
     }
 
     protected Map from(File script) {
-        // The default Gradle classloader breaks the Java ServiceLoader, so we need to use our own classloader
-        final ClassLoader mdgClassLoader = new URLClassLoader(mdgRuntimeFiles.files.collect { it.toURI().toURL() }.toArray(URL[]::new))
-
-        final compilerConfig = new CompilerConfiguration(MDG_COMPILER_CONFIG)
-        compilerConfig.classpathList = mdgClassLoader.URLs*.toString()
-        //println "mdgClassLoader classpath: ${compilerConfig.classpath}"
-
-        final bindingAdderTransform = new ASTTransformationCustomizer(MDGBindingVarsAdder)
-        final Platform platform = platform.get()
-        final GString frontendClassName = "${platform.toString()}ModsDotGroovy"
-        if (isMultiplatform.get())
-            frontendClassName.values[0] = 'Multiplatform'
-
-        bindingAdderTransform.annotationParameters = [className: frontendClassName.toString()] as Map<String, Object>
-
-        compilerConfig.addCompilationCustomizers(bindingAdderTransform)
-
         Map bindingValues = [
                 buildProperties: buildProperties.get(),
-                platform: platform,
                 version: projectVersion.get(),
                 group: projectGroup.get(),
         ]
@@ -141,15 +120,6 @@ abstract class AbstractMDGConvertTask extends DefaultTask {
         final json = new JsonSlurper()
         bindingValues = MapUtils.recursivelyMergeOnlyMaps(bindingValues, json.parse(platformDetailsFile.get().asFile) as Map)
 
-        final bindings = new Binding(bindingValues)
-        final shell = new GroovyShell(mdgClassLoader, bindings, compilerConfig)
-        // set context classloader to MDG classloader so that transitive dependencies work correctly
-        shell.evaluate('Thread.currentThread().contextClassLoader = this.class.classLoader')
-        return fromScriptResult(shell.evaluate(script))
-    }
-
-    @CompileDynamic
-    private static Map fromScriptResult(def scriptResult) {
-        return scriptResult.core.build()
+        return convertService.get().run(getRunnerClasspath().getAsPath(), mdgRuntimeFiles.files.collect { it.toURI().toURL() }.toArray(URL[]::new), script, platform.get(), isMultiplatform.get(), FilteredStream.convertToSerializable(bindingValues) as Map<String, Object>)
     }
 }
