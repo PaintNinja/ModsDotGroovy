@@ -28,7 +28,11 @@ abstract class ModsDotGroovyGradlePlugin implements Plugin<Project> {
         JavaPluginExtension javaPluginExtension = project.extensions.getByType(JavaPluginExtension)
         SourceSetContainer sourceSets = javaPluginExtension.sourceSets
 
-        project.configurations.register('modsDotGroovyRunnerClasspath')
+
+        var runnerClasspath = project.configurations.register('modsDotGroovyRunnerClasspath')
+        runnerClasspath.configure { conf ->
+            conf.dependencies.add(project.dependencies.platform("org.groovymc.modsdotgroovy:modsdotgroovy:$VERSION"))
+        }
         project.dependencies.add('modsDotGroovyRunnerClasspath', project.dependencies.create('org.groovymc.modsdotgroovy:runner'))
         project.getGradle().getSharedServices().registerIfAbsent(ConvertService.name, ConvertService) { BuildServiceSpec<ConvertService.Parameters> it ->
             it.parameters.threads.set(project.providers.systemProperty(ConvertService.THREAD_COUNT_PROPERTY).orElse("4"))
