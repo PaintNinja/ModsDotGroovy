@@ -2,15 +2,13 @@ package org.groovymc.modsdotgroovy.gradle.tasks
 
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
-import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.component.ComponentArtifactIdentifier
-import org.gradle.api.artifacts.result.ResolvedComponentResult
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
-import org.gradle.internal.component.external.model.ModuleComponentArtifactIdentifier
 import org.jetbrains.annotations.Nullable
 
 @CacheableTask
@@ -25,11 +23,13 @@ abstract class GatherLoomPlatformDetails extends AbstractGatherPlatformDetailsTa
     @Input
     abstract Property<String> getTargetModule()
 
-    String calculatePlatformVersion() {
+    private String calculatePlatformVersion() {
         return artifactIds.get().findResult {
-            if (it instanceof ModuleComponentArtifactIdentifier) {
-                if (it.componentIdentifier.group == targetGroup.get() && it.componentIdentifier.module == targetModule.get()) {
-                    return it.componentIdentifier.version
+            def component = it.componentIdentifier
+            if (component instanceof ModuleComponentIdentifier) {
+                def module = component as ModuleComponentIdentifier
+                if (module.group == targetGroup.get() && module.module == targetModule.get()) {
+                    return module.version
                 }
             }
             return null
@@ -56,9 +56,17 @@ abstract class GatherLoomPlatformDetails extends AbstractGatherPlatformDetailsTa
     @CompileDynamic
     private Provider<String> getMCVersionFromLoom() {
         return project.provider {
-            // Todo: Use non-internal Loom API when available - https://github.com/FabricMC/fabric-loom/issues/982
             final @Nullable def loomExtension = project.extensions.findByName('loom')
-            return (String) loomExtension?.minecraftProvider?.minecraftVersion()
+            if (loomExtension !== null && loomExtension.hasProperty('minecraftVersion')) {
+                return (String) loomExtension.minecraftVersion.get()
+            } else if (loomExtension !== null && loomExtension.hasProperty('minecraftProvider')) {
+                // The old legacy way, using an internal API if it works
+                def provider = loomExtension.minecraftProvider
+                if (provider !== null && provider.respondsTo('minecraftVersion')) {
+                    return (String) provider.minecraftVersion()
+                }
+            }
+            return null
         }
     }
 }

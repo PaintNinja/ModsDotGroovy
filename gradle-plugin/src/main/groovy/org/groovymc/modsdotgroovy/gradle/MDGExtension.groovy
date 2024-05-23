@@ -114,12 +114,29 @@ abstract class MDGExtension {
         this.convertActions.finalizeValueOnRead()
     }
 
-    private static List<Platform> inferPlatforms(Project project) {
-        if (project.plugins.findPlugin('net.minecraftforge.gradle')) return List.of(Platform.FORGE)
-        else if (project.plugins.findPlugin('net.neoforged.gradle.userdev')) return List.of(Platform.NEOFORGE)
-        else if (project.plugins.findPlugin('fabric-loom')) return List.of(Platform.FABRIC)
-        else if (project.plugins.findPlugin('org.quiltmc.loom')) return List.of(Platform.QUILT)
-        else return List.of()
+    private static Provider<List<Platform>> inferPlatforms(Project project) {
+        return project.<List<Platform>>provider {
+
+            boolean loomPresent = isLoomProbablyPresent(project)
+            String archLoomPlatform = project.findProperty('loom.platform')
+            if (loomPresent && archLoomPlatform !== null) {
+                return List.of(Platform.fromRegistry(archLoomPlatform))
+            }
+
+            if (project.plugins.findPlugin('net.minecraftforge.gradle')) return List.of(Platform.FORGE)
+            else if (project.plugins.findPlugin('net.neoforged.gradle.userdev')) return List.of(Platform.NEOFORGE)
+            else if (project.plugins.findPlugin('fabric-loom')) return List.of(Platform.FABRIC)
+            else if (project.plugins.findPlugin('org.quiltmc.loom')) return List.of(Platform.QUILT)
+            else if (loomPresent) return List.of(Platform.FABRIC)
+
+            return List.of()
+        }
+    }
+
+    private static boolean isLoomProbablyPresent(Project project) {
+        var loom = project.extensions.findByName('loom')
+        // The loom extension is present and looks sort of like what we expect
+        return loom !== null && loom.hasProperty('minecraftVersion')
     }
 
     void multiplatform(Action<Multiplatform> action) {
@@ -477,24 +494,49 @@ abstract class MDGExtension {
 
     private TaskProvider<? extends AbstractGatherPlatformDetailsTask> setupGatherTask(Platform platform, SourceSet sourceSet) {
         TaskProvider<? extends AbstractGatherPlatformDetailsTask> gatherTask
+
+        boolean loomPresent = isLoomProbablyPresent(project)
+
         if (inferGather.get()) {
             switch (platform) {
                 case Platform.FORGE:
-                    gatherTask = makeGatherTask(platform, GatherForgePlatformDetails)
-                    gatherTask.configure { task ->
-                        Configuration modImplementation = project.configurations.getByName('minecraft')
-                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
-                        task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                    if (loomPresent) {
+                        gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
+                        gatherTask.configure { task ->
+                            Configuration forgeConfig = project.configurations.getByName('forgeUserdev')
+                            Provider<Set<ResolvedArtifactResult>> artifacts = forgeConfig.incoming.artifacts.resolvedArtifacts
+                            task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                            task.targetModule.set('minecraftforge')
+                            task.targetGroup.set('net.minecraftforge')
+                        }
+                    } else {
+                        gatherTask = makeGatherTask(platform, GatherForgePlatformDetails)
+                        gatherTask.configure { task ->
+                            Configuration minecraftConfig = project.configurations.getByName('minecraft')
+                            Provider<Set<ResolvedArtifactResult>> artifacts = minecraftConfig.incoming.artifacts.resolvedArtifacts
+                            task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                        }
                     }
                     break
                 case Platform.NEOFORGE:
-                    gatherTask = makeGatherTask(platform, GatherNeoForgePlatformDetails, sourceSet.compileClasspathConfigurationName)
+                    if (loomPresent) {
+                        gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
+                        gatherTask.configure { task ->
+                            Configuration neoForgeConfig = project.configurations.getByName('forgeUserdev')
+                            Provider<Set<ResolvedArtifactResult>> artifacts = neoForgeConfig.incoming.artifacts.resolvedArtifacts
+                            task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
+                            task.targetModule.set('neoforge')
+                            task.targetGroup.set('net.neoforged')
+                        }
+                    } else {
+                        gatherTask = makeGatherTask(platform, GatherNeoForgePlatformDetails, sourceSet.compileClasspathConfigurationName)
+                    }
                     break
                 case Platform.FABRIC:
                     gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
                     gatherTask.configure { task ->
-                        Configuration modImplementation = project.configurations.getByName('modCompileClasspath')
-                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
+                        Configuration modCompileClasspath = project.configurations.getByName('modCompileClasspath')
+                        Provider<Set<ResolvedArtifactResult>> artifacts = modCompileClasspath.incoming.artifacts.resolvedArtifacts
                         task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
                         task.targetModule.set('fabric-loader')
                         task.targetGroup.set('net.fabricmc')
@@ -503,8 +545,8 @@ abstract class MDGExtension {
                 case Platform.QUILT:
                     gatherTask = makeGatherTask(platform, GatherLoomPlatformDetails)
                     gatherTask.configure { task ->
-                        Configuration modImplementation = project.configurations.getByName('modCompileClasspath')
-                        Provider<Set<ResolvedArtifactResult>> artifacts = modImplementation.incoming.artifacts.resolvedArtifacts
+                        Configuration modCompileClasspath = project.configurations.getByName('modCompileClasspath')
+                        Provider<Set<ResolvedArtifactResult>> artifacts = modCompileClasspath.incoming.artifacts.resolvedArtifacts
                         task.artifactIds.set(artifacts.map(artifact -> artifact*.id))
                         task.targetModule.set('quilt-loader')
                         task.targetGroup.set('org.quiltmc')
