@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        mavenCentral() // bintray jcenter mirroring on GPP is iffy
         gradlePluginPortal()
         maven {
             name = 'NeoForged'
