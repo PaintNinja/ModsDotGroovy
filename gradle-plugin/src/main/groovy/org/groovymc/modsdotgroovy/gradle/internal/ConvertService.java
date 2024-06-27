@@ -160,7 +160,7 @@ public abstract class ConvertService implements BuildService<ConvertService.Para
             output = new ObjectOutputStream(socket.getOutputStream());
             this.setUncaughtExceptionHandler((t, e) -> {
                 try {
-                    close(e);
+                    shutdown(e);
                 } catch (IOException ex) {
                     var exception = new UncheckedIOException(ex);
                     exception.addSuppressed(e);
@@ -181,7 +181,7 @@ public abstract class ConvertService implements BuildService<ConvertService.Para
 
         private volatile boolean closed = false;
 
-        private void close(Throwable e) throws IOException {
+        private void beginClose(Throwable e) throws IOException {
             if (this.closed) return;
             this.closed = true;
             for (var future : results.values()) {
@@ -189,11 +189,26 @@ public abstract class ConvertService implements BuildService<ConvertService.Para
             }
             results.clear();
 
-            output.writeObject(new Stop());
+            socket.shutdownInput();
         }
 
-        public void close() throws IOException {
-            close(new IOException("Execution was interrupted"));
+        private void finishClose() throws IOException {
+            output.writeObject(new Stop());
+            socket.close();
+        }
+
+        public void shutdown() throws IOException {
+            shutdown(new IOException("Execution was interrupted"));
+        }
+
+        private void shutdown(Throwable t) throws IOException {
+            this.beginClose(t);
+            try {
+                this.join();
+            } catch (InterruptedException e) {
+                // continue, it's fine
+            }
+            this.finishClose();
         }
 
         @Override
@@ -236,11 +251,7 @@ public abstract class ConvertService implements BuildService<ConvertService.Para
             List<Exception> suppressed = new ArrayList<>();
             if (listener != null) {
                 try {
-                    listener.close();
-                    if (listener.isAlive()) {
-                        listener.interrupt();
-                    }
-                    listener.join();
+                    listener.shutdown();
                 } catch (Exception e) {
                     suppressed.add(e);
                 }
