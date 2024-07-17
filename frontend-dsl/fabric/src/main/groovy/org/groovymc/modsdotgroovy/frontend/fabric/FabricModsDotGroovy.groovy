@@ -81,6 +81,9 @@ class FabricModsDotGroovy extends ModsDotGroovyFrontend implements PropertyInter
 
     @Nullable String accessWidener = null
 
+    /**@
+     * A shorthand for a single icon file of a given size. Prefer using {@link #icon(Closure)} if you need multiple sizes.
+     */
     void icon(final int size, final String path) {
         log.debug "icon(int, string)"
         core.push('icon')
@@ -257,12 +260,12 @@ class FabricModsDotGroovy extends ModsDotGroovyFrontend implements PropertyInter
      * You can add any field you want to add inside custom field. Loader would ignore them. However it's highly recommended
      * to namespace your fields to avoid conflicts if your fields (names) would be added to the standard specification.
      */
-    void custom(@DelegatesTo(value = CustomPropertyBuilder, strategy = Closure.DELEGATE_FIRST)
-                @ClosureParams(value = SimpleType, options = 'org.groovymc.modsdotgroovy.frontend.fabric.CustomPropertyBuilder')
+    void custom(@DelegatesTo(value = SimpleBuilder, strategy = Closure.DELEGATE_FIRST)
+                @ClosureParams(value = SimpleType, options = 'org.groovymc.modsdotgroovy.frontend.fabric.SimpleBuilder')
                 final Closure closure) {
         log.debug "custom(closure)"
         core.push('custom')
-        final customPropertyBuilder = new CustomPropertyBuilder(core)
+        final customPropertyBuilder = new SimpleBuilder(core)
         closure.resolveStrategy = Closure.DELEGATE_FIRST
         closure.delegate = customPropertyBuilder
         closure.call(customPropertyBuilder)
